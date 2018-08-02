@@ -21,6 +21,8 @@ using Sitecore.Marketing.Definitions.PageEvents;
 using Sitecore.Marketing.Definitions.Profiles;
 using Sitecore.Marketing.Definitions.Segments;
 using Sitecore.Marketing.xMgmt.Extensions;
+using Sitecore.Web.UI.Sheer;
+using Sitecore.Web.UI.WebControls;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -92,6 +94,15 @@ namespace Sitecore.Support.Marketing.xMgmt.Definitions
       return args == null || _disabled > 0 || Context.Site == null || Context.Site.Name == "publisher";
     }
 
+    private void ProcessValidationException(Exception ex, string fullItemPath)
+    {
+      if (AjaxScriptManager.Current != null || (Sitecore.Context.ClientPage != null && Sitecore.Context.ClientPage.ClientResponse != null))
+      {
+        SheerResponse.ShowError(ex);
+      }
+      _log.Error($"{fullItemPath} is not a valid item name. {ex.Message}", this);  
+    }
+
     [UsedImplicitly]
     protected internal void OnItemSaving([NotNull] object sender, [CanBeNull] EventArgs args)
     {
@@ -105,16 +116,23 @@ namespace Sitecore.Support.Marketing.xMgmt.Definitions
       var item = Event.ExtractParameter(args, 0) as Item;
       if (item != null)
       {
-        var itemData = new ItemData
+        try
         {
-          Name = item.Name,
-          Id = item.ID,
-          TemplateId = item.TemplateID,
-          Parent = item.Parent,
-          ItemDb = item.Database
-        };
+          var itemData = new ItemData
+          {
+            Name = item.Name,
+            Id = item.ID,
+            TemplateId = item.TemplateID,
+            Parent = item.Parent,
+            ItemDb = item.Database
+          };
 
-        ValidateItemName(itemData);
+          ValidateItemName(itemData);
+        }
+        catch (Exception ex)
+        {
+          ProcessValidationException(ex, $"{item.Parent.Paths.FullPath}/{item.Name}");
+        }
       }
     }
 
@@ -144,10 +162,10 @@ namespace Sitecore.Support.Marketing.xMgmt.Definitions
 
           ValidateItemName(itemData);
         }
-        catch
+        catch(Exception ex)
         {
           creatingArgs.Cancel = true;
-          throw;
+          ProcessValidationException(ex, $"{creatingArgs.Parent.Paths.FullPath}/{creatingArgs.ItemName}" );
         }
       }
     }
