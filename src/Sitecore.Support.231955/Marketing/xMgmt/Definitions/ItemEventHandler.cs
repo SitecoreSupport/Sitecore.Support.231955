@@ -94,26 +94,36 @@ namespace Sitecore.Support.Marketing.xMgmt.Definitions
       return args == null || _disabled > 0 || Context.Site == null || Context.Site.Name == "publisher";
     }
 
-    private void ProcessValidationException(Exception ex, string fullItemPath)
+    private void ProcessValidationException(Exception ex, string name, string parentPath)
     {
       if (AjaxScriptManager.Current != null || (Sitecore.Context.ClientPage != null && Sitecore.Context.ClientPage.ClientResponse != null))
       {
         SheerResponse.ShowError(ex);
       }
-      _log.Error($"{fullItemPath} is not a valid item name. {ex.Message}", this);  
+      _log.Error($"{name} is not a valid item name under {parentPath}. {ex.Message}", this);
     }
 
-    [UsedImplicitly]
-    protected internal void OnItemSaving([NotNull] object sender, [CanBeNull] EventArgs args)
+    protected void ValidateItemName(EventArgs args)
     {
-      Condition.Requires(sender, nameof(sender)).IsNotNull();
-
       if (ShouldSkipEventProcessing(args))
       {
         return;
       }
 
-      var item = Event.ExtractParameter(args, 0) as Item;
+      var parameters = Event.ExtractParameters(args);
+      var item = parameters[0] as Item;
+      var parent = item.Parent;
+      if (parameters.Length >= 3 && (parameters[2] is ID))
+      {
+        var parentID = parameters[2] as ID;
+        parent = item.Database.GetItem(parentID);
+      }
+      var itemID = item.ID;
+      if (parameters.Length >= 4 && (parameters[3] is ID))
+      {
+        itemID = parameters[3] as ID;
+      }
+
       if (item != null)
       {
         try
@@ -121,9 +131,9 @@ namespace Sitecore.Support.Marketing.xMgmt.Definitions
           var itemData = new ItemData
           {
             Name = item.Name,
-            Id = item.ID,
+            Id = itemID,
             TemplateId = item.TemplateID,
-            Parent = item.Parent,
+            Parent = parent,
             ItemDb = item.Database
           };
 
@@ -131,9 +141,42 @@ namespace Sitecore.Support.Marketing.xMgmt.Definitions
         }
         catch (Exception ex)
         {
-          ProcessValidationException(ex, $"{item.Parent.Paths.FullPath}/{item.Name}");
+          var sArgs = args as Sitecore.Events.SitecoreEventArgs;
+          if (sArgs != null)
+          {
+            sArgs.Result.Cancel = true;
+          }
+          ProcessValidationException(ex, item.Name, item.Parent.Paths.FullPath);
         }
       }
+    }
+
+    [UsedImplicitly]
+    protected internal void OnItemMoving([NotNull] object sender, [CanBeNull] EventArgs args)
+    {
+      Condition.Requires(sender, nameof(sender)).IsNotNull();
+      ValidateItemName(args);
+    }
+
+    [UsedImplicitly]
+    protected internal void OnItemCopying([NotNull] object sender, [CanBeNull] EventArgs args)
+    {
+      Condition.Requires(sender, nameof(sender)).IsNotNull();
+      ValidateItemName(args);
+    }
+
+    [UsedImplicitly]
+    protected internal void OnItemRenaming([NotNull] object sender, [CanBeNull] EventArgs args)
+    {
+      Condition.Requires(sender, nameof(sender)).IsNotNull();
+      ValidateItemName(args);
+    }
+
+    [UsedImplicitly]
+    protected internal void OnItemSaving([NotNull] object sender, [CanBeNull] EventArgs args)
+    {
+      Condition.Requires(sender, nameof(sender)).IsNotNull();
+      ValidateItemName(args);
     }
 
     [UsedImplicitly]
@@ -162,10 +205,10 @@ namespace Sitecore.Support.Marketing.xMgmt.Definitions
 
           ValidateItemName(itemData);
         }
-        catch(Exception ex)
+        catch (Exception ex)
         {
           creatingArgs.Cancel = true;
-          ProcessValidationException(ex, $"{creatingArgs.Parent.Paths.FullPath}/{creatingArgs.ItemName}" );
+          ProcessValidationException(ex, creatingArgs.ItemName, creatingArgs.Parent.Paths.FullPath);
         }
       }
     }
